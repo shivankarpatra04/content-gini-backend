@@ -19,6 +19,14 @@ app.use(cors({
     credentials: true
 }));
 
+// Set timeout for all routes
+app.use((req, res, next) => {
+    res.setTimeout(30000, () => {
+        res.status(504).send('Request Timeout');
+    });
+    next();
+});
+
 // Health check route
 app.get('/', (req, res) => {
     res.json({ status: 'ok', message: 'Server is running' });
