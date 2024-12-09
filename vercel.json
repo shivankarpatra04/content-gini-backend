@@ -9,10 +9,28 @@
     "routes": [
         {
             "src": "/(.*)",
-            "dest": "server.js"
+            "dest": "/server.js",
+            "methods": [
+                "GET",
+                "POST",
+                "PUT",
+                "DELETE",
+                "PATCH",
+                "OPTIONS"
+            ],
+            "headers": {
+                "Access-Control-Allow-Origin": "*"
+            }
         }
     ],
-    "env": {
-        "NODE_ENV": "production"
+    "functions": {
+        "api/blog/generate": {
+            "memory": 1024,
+            "maxDuration": 60
+        },
+        "api/blog/analyze": {
+            "memory": 1024,
+            "maxDuration": 60
+        }
     }
 }
