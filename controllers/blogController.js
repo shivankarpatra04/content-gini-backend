@@ -36,7 +36,7 @@ const analyzeContent = async (req, res) => {
             success: true,
             jobId,
             message: 'Analysis started',
-            statusEndpoint: `/status/${jobId}`
+            statusEndpoint: `/api/status/${jobId}`
         });
 
     } catch (error) {
@@ -148,7 +148,7 @@ const generateContent = async (req, res) => {
             success: true,
             jobId,
             message: 'Content generation started',
-            statusEndpoint: `/status/${jobId}`
+            statusEndpoint: `/api/status/${jobId}`
         });
 
     } catch (error) {
