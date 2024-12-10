@@ -1,130 +1,103 @@
 const axios = require('axios');
 const { v4: uuidv4 } = require('uuid');
 
-// In-memory storage for job status (use Redis/DB in production)
+// Simple in-memory store (use Redis/DB in production)
 const jobStore = new Map();
-
-const createJob = (jobId) => {
-    jobStore.set(jobId, {
-        status: 'processing',
-        data: null,
-        error: null,
-        timestamp: Date.now()
-    });
-    return jobId;
-};
-
-const updateJob = (jobId, status, data = null, error = null) => {
-    jobStore.set(jobId, {
-        status,
-        data,
-        error,
-        timestamp: Date.now()
-    });
-};
-
-const getJobStatus = (jobId) => {
-    return jobStore.get(jobId);
-};
-
-// Clean up old jobs periodically
-setInterval(() => {
-    const oneHourAgo = Date.now() - 3600000;
-    for (const [jobId, job] of jobStore.entries()) {
-        if (job.timestamp < oneHourAgo) {
-            jobStore.delete(jobId);
-        }
-    }
-}, 3600000);
 
 const analyzeContent = async (req, res) => {
     try {
+        // Validate request body
+        if (!req.body || !req.body.text) {
+            console.error('Invalid request body: Missing text');
+            return res.status(400).json({
+                success: false,
+                error: 'Text is required'
+            });
+        }
+
         const { text } = req.body;
+
+        // Create job ID
         const jobId = uuidv4();
 
-        // Create job and return ID immediately
-        createJob(jobId);
+        // Store initial job status
+        jobStore.set(jobId, {
+            status: 'processing',
+            data: null,
+            error: null,
+            timestamp: Date.now()
+        });
 
-        // Process in background
-        processAnalysis(jobId, text);
+        // Start background processing
+        startAnalysis(jobId, text);
 
+        // Return immediate response
         return res.status(202).json({
             success: true,
             jobId,
             message: 'Analysis started',
             statusEndpoint: `/api/status/${jobId}`
         });
+
     } catch (error) {
+        console.error('Error in analyzeContent:', error);
         return res.status(500).json({
             success: false,
-            error: error.message
+            error: 'Internal server error',
+            message: error.message
         });
     }
 };
 
-const processAnalysis = async (jobId, text) => {
+const startAnalysis = async (jobId, text) => {
     try {
+        if (!process.env.ML_SERVICE_URL) {
+            throw new Error('ML_SERVICE_URL environment variable is not set');
+        }
+
         const response = await axios.post(
             `${process.env.ML_SERVICE_URL}/api/analyze`,
             { text },
-            { timeout: 300000 } // 5 minute timeout
+            {
+                timeout: 300000, // 5 minutes
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            }
         );
-        updateJob(jobId, 'completed', response.data);
-    } catch (error) {
-        updateJob(jobId, 'failed', null, error.message);
-    }
-};
 
-const generateContent = async (req, res) => {
-    try {
-        const { title, keywords, tone } = req.body;
-
-        if (!title && !keywords) {
-            return res.status(400).json({
-                success: false,
-                error: 'Title or keywords are required'
-            });
-        }
-
-        const jobId = uuidv4();
-        createJob(jobId);
-
-        // Process in background
-        processGeneration(jobId, { title, keywords, tone });
-
-        return res.status(202).json({
-            success: true,
-            jobId,
-            message: 'Content generation started',
-            statusEndpoint: `/api/status/${jobId}`
+        jobStore.set(jobId, {
+            status: 'completed',
+            data: response.data,
+            error: null,
+            timestamp: Date.now()
         });
-    } catch (error) {
-        return res.status(500).json({
-            success: false,
-            error: error.message
-        });
-    }
-};
 
-const processGeneration = async (jobId, data) => {
-    try {
-        const response = await axios.post(
-            `${process.env.ML_SERVICE_URL}/api/generate`,
-            data,
-            { timeout: 300000 } // 5 minute timeout
-        );
-        updateJob(jobId, 'completed', response.data);
     } catch (error) {
-        updateJob(jobId, 'failed', null, error.message);
+        console.error('Error in startAnalysis:', error);
+        jobStore.set(jobId, {
+            status: 'failed',
+            data: null,
+            error: error.message || 'Analysis failed',
+            timestamp: Date.now()
+        });
     }
 };
 
 const checkStatus = async (req, res) => {
     try {
         const { jobId } = req.params;
-        const status = getJobStatus(jobId);
 
-        if (!status) {
+        if (!jobId) {
+            return res.status(400).json({
+                success: false,
+                error: 'Job ID is required'
+            });
+        }
+
+        const job = jobStore.get(jobId);
+
+        if (!job) {
             return res.status(404).json({
                 success: false,
                 error: 'Job not found'
@@ -133,12 +106,92 @@ const checkStatus = async (req, res) => {
 
         return res.json({
             success: true,
-            ...status
+            ...job
         });
+
     } catch (error) {
+        console.error('Error in checkStatus:', error);
         return res.status(500).json({
             success: false,
-            error: error.message
+            error: 'Internal server error',
+            message: error.message
+        });
+    }
+};
+
+const generateContent = async (req, res) => {
+    try {
+        const { title, keywords, tone } = req.body;
+
+        // Validate request
+        if (!title && !keywords) {
+            return res.status(400).json({
+                success: false,
+                error: 'Title or keywords are required'
+            });
+        }
+
+        const jobId = uuidv4();
+
+        // Store initial job status
+        jobStore.set(jobId, {
+            status: 'processing',
+            data: null,
+            error: null,
+            timestamp: Date.now()
+        });
+
+        // Start background processing
+        startGeneration(jobId, { title, keywords, tone });
+
+        return res.status(202).json({
+            success: true,
+            jobId,
+            message: 'Content generation started',
+            statusEndpoint: `/api/status/${jobId}`
+        });
+
+    } catch (error) {
+        console.error('Error in generateContent:', error);
+        return res.status(500).json({
+            success: false,
+            error: 'Internal server error',
+            message: error.message
+        });
+    }
+};
+
+const startGeneration = async (jobId, data) => {
+    try {
+        if (!process.env.ML_SERVICE_URL) {
+            throw new Error('ML_SERVICE_URL environment variable is not set');
+        }
+
+        const response = await axios.post(
+            `${process.env.ML_SERVICE_URL}/api/generate`,
+            data,
+            {
+                timeout: 300000,
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            }
+        );
+
+        jobStore.set(jobId, {
+            status: 'completed',
+            data: response.data,
+            error: null,
+            timestamp: Date.now()
+        });
+
+    } catch (error) {
+        console.error('Error in startGeneration:', error);
+        jobStore.set(jobId, {
+            status: 'failed',
+            data: null,
+            error: error.message || 'Generation failed',
+            timestamp: Date.now()
         });
     }
 };
