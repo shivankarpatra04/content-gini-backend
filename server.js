@@ -28,16 +28,25 @@ initializeDB();
 // Configure CORS (Must be the very first middleware to handle preflights and early errors)
 app.use(cors({
     origin: function (origin, callback) {
+        // Allow non-browser / same-origin requests (curl, server-to-server, etc.)
         if (!origin) return callback(null, true);
+
         const allowedOrigins = [
             'http://localhost:5173',
             'http://127.0.0.1:5173',
-            'https://content-gini.vercel.app'
-        ];
-        if (allowedOrigins.indexOf(origin) !== -1 || process.env.NODE_ENV !== 'production') {
+            process.env.FRONTEND_URL            // configured production frontend
+        ].filter(Boolean);
+
+        const isAllowed =
+            allowedOrigins.includes(origin) ||
+            // Any Vercel deployment (production + preview URLs with hashes)
+            /^https:\/\/[a-z0-9-]+\.vercel\.app$/i.test(origin) ||
+            process.env.NODE_ENV !== 'production';
+
+        if (isAllowed) {
             callback(null, true);
         } else {
-            callback(new Error('Not allowed by CORS'));
+            callback(new Error(`Not allowed by CORS: ${origin}`));
         }
     },
     credentials: true,
