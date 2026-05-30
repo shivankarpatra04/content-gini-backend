@@ -25,19 +25,29 @@ const initializeDB = async () => {
 
 initializeDB();
 
-// Middleware
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
-
-// Configure CORS
+// Configure CORS (Must be the very first middleware to handle preflights and early errors)
 app.use(cors({
-    origin: process.env.NODE_ENV === 'production'
-        ? process.env.FRONTEND_URL
-        : ['https://content-gini.vercel.app/'],
+    origin: function (origin, callback) {
+        if (!origin) return callback(null, true);
+        const allowedOrigins = [
+            'http://localhost:5173',
+            'http://127.0.0.1:5173',
+            'https://content-gini.vercel.app'
+        ];
+        if (allowedOrigins.indexOf(origin) !== -1 || process.env.NODE_ENV !== 'production') {
+            callback(null, true);
+        } else {
+            callback(new Error('Not allowed by CORS'));
+        }
+    },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization']
 }));
+
+// Body Parsers
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // Request timeout middleware
 app.use((req, res, next) => {
